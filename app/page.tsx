@@ -51,7 +51,8 @@ function GlobalNetworkViz({ color, radius = 2.2 }: { color: string, radius?: num
         const p1 = new THREE.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
         const p2 = new THREE.Vector3(pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2]);
         
-        if (p1.distanceTo(p2) < 1.0) {
+        // Aumentado a 1.3 para que las líneas no se rompan al hacer más grande la red
+        if (p1.distanceTo(p2) < 1.3) {
           linePositions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
         }
       }
@@ -70,13 +71,15 @@ function GlobalNetworkViz({ color, radius = 2.2 }: { color: string, radius?: num
     <group ref={group}>
       <points>
         <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+          {/* FIX VERCEL: Se añadió args={[positions, 3]} */}
+          <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} args={[positions, 3]} />
         </bufferGeometry>
         <pointsMaterial size={0.05} color={color} transparent opacity={1} depthWrite={false} />
       </points>
       <lineSegments>
         <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={lines.length / 3} array={lines} itemSize={3} />
+          {/* FIX VERCEL: Se añadió args={[lines, 3]} */}
+          <bufferAttribute attach="attributes-position" count={lines.length / 3} array={lines} itemSize={3} args={[lines, 3]} />
         </bufferGeometry>
         <lineBasicMaterial color={color} transparent opacity={0.3} depthWrite={false} />
       </lineSegments>
@@ -202,28 +205,24 @@ export default function Home() {
             </div>
           </motion.div>
 
-          {/* ===== VENTANA DE NAVE ESPACIAL (Bug de escala solucionado) ===== */}
+          {/* ===== VENTANA DE NAVE ESPACIAL ===== */}
           <motion.div 
             className="relative w-full h-[450px] md:h-[500px]"
-            // FIX: Usamos "y: 40" en lugar de "scale: 0.9" para evitar el bug de WebGL
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4 }}
           >
-            {/* Casco Metálico Exterior */}
             <div 
               className="absolute inset-0 rounded-[3.5rem] p-4 bg-gradient-to-br from-zinc-700 via-zinc-900 to-black transition-all duration-500"
               style={{ 
                 boxShadow: `0 20px 50px -10px ${accentColor}30, inset 0 2px 2px rgba(255,255,255,0.2), inset 0 -4px 6px rgba(0,0,0,0.8)`
               }}
             >
-              {/* Remaches de la nave */}
               <div className="absolute top-8 left-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
               <div className="absolute top-8 right-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
               <div className="absolute bottom-8 left-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
               <div className="absolute bottom-8 right-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
 
-              {/* Cristal / Ventana Interior */}
               <div 
                 className="relative w-full h-full rounded-[2.5rem] bg-[#020202] overflow-hidden isolate"
                 style={{
@@ -231,10 +230,8 @@ export default function Home() {
                   border: `1px solid ${accentColor}30`
                 }}
               >
-                {/* Reflejo del cristal curvo de la ventana */}
                 <div className="absolute -top-10 -left-10 w-40 h-full bg-white/5 rotate-45 blur-md pointer-events-none z-10" />
 
-                {/* El Canvas está anclado estrictamente a los bordes */}
                 <div className="absolute inset-0 w-full h-full">
                   <Canvas camera={{ position: [0, 0, 8], fov: 40 }} dpr={[1, 2]}>
                     <ambientLight intensity={0.5} />
@@ -248,8 +245,9 @@ export default function Home() {
                     </EffectComposer>
 
                     <group position={[0, 0, 0]} rotation={[0.4, 0, 0]}>
-                       <GlobalNetworkViz color={accentColor} radius={2.2} />
-                       <LaptopModel position={[0, 0, 0]} scale={1.2} />
+                       {/* AUMENTO DE TAMAÑO: Radio a 2.8 y Escala de Laptop a 1.6 */}
+                       <GlobalNetworkViz color={accentColor} radius={2.8} />
+                       <LaptopModel position={[0, 0, 0]} scale={1.6} />
                     </group>
 
                     <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={0.5} makeDefault />
