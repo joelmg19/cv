@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { motion } from "framer-motion";
+import * as THREE from "three";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import {
   SiPython,
   SiPhp,
@@ -26,18 +28,71 @@ import {
 import LaptopModel from "@/components/LaptopModel";
 
 /* ===========================
+   Componente de Visualización de Red Global (Efecto "Capa de Ozono")
+   =========================== */
+function GlobalNetworkViz({ color, radius = 2.2 }: { color: string, radius?: number }) {
+  const group = useRef<any>(null);
+
+  const [positions, lines] = useMemo(() => {
+    const count = 150; 
+    const pos = new Float32Array(count * 3);
+    
+    for (let i = 0; i < count; i++) {
+      const phi = Math.acos(1 - (2 * i) / count);
+      const theta = Math.sqrt(count * Math.PI) * phi;
+      pos[i * 3] = radius * Math.cos(theta) * Math.sin(phi);
+      pos[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+      pos[i * 3 + 2] = radius * Math.cos(phi);
+    }
+
+    const linePositions = [];
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        const p1 = new THREE.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+        const p2 = new THREE.Vector3(pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2]);
+        
+        if (p1.distanceTo(p2) < 1.0) {
+          linePositions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+        }
+      }
+    }
+    return [pos, new Float32Array(linePositions)];
+  }, [radius]);
+
+  useFrame((state) => {
+    if (group.current) {
+      group.current.rotation.y = state.clock.elapsedTime * 0.04;
+      group.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.03) * 0.1;
+    }
+  });
+
+  return (
+    <group ref={group}>
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial size={0.05} color={color} transparent opacity={1} depthWrite={false} />
+      </points>
+      <lineSegments>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={lines.length / 3} array={lines} itemSize={3} />
+        </bufferGeometry>
+        <lineBasicMaterial color={color} transparent opacity={0.3} depthWrite={false} />
+      </lineSegments>
+    </group>
+  );
+}
+
+/* ===========================
    Variants para animaciones
    =========================== */
-
 const sectionVariants = {
-  hidden: { opacity: 0, y: 40 },
-  visible: { opacity: 1, y: 0 },
-};
-
-const listVariants = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.08 },
+  hidden: { opacity: 0, y: 30 },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    transition: { duration: 0.6, ease: "easeOut" }
   },
 };
 
@@ -46,545 +101,319 @@ const itemVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
-/* ===========================
-   Tipos para repos de GitHub
-   =========================== */
-
-type GithubRepo = {
-  id: number;
-  name: string;
-  html_url: string;
-  description: string | null;
-  language: string | null;
-  stargazers_count: number;
-};
-
-type SkillItem = {
-  label: string;
-  icon?: ReactNode;
-};
-
-type SkillCardProps = {
-  title: string;
-  items: SkillItem[];
-};
-
-type ProjectCardProps = {
-  title: string;
-  description: string;
-  tech: string;
-  url: string;
-};
-
 export default function Home() {
-  const [repos, setRepos] = useState<GithubRepo[]>([]);
+  const [repos, setRepos] = useState<any[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(true);
-  const [reposError, setReposError] = useState<string | null>(null);
-
   const [theme, setTheme] = useState<"blue" | "purple" | "emerald">("blue");
 
   const accentColor =
-    theme === "blue" ? "#38bdf8" : theme === "purple" ? "#a855f7" : "#10b981";
+    theme === "blue" ? "#00F0FF" : theme === "purple" ? "#8A2BE2" : "#10b981";
+
+  const dynamicGradientStyle = {
+    backgroundImage: `linear-gradient(135deg, ${accentColor}, #ffffff)`,
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text"
+  };
 
   useEffect(() => {
     const fetchRepos = async () => {
       try {
         setIsLoadingRepos(true);
-        setReposError(null);
-
         const res = await fetch(
-          "https://api.github.com/users/joelmg19/repos?sort=updated&per_page=8"
+          "https://api.github.com/users/joelmg19/repos?sort=updated&per_page=6"
         );
-
-        if (!res.ok) throw new Error("Error cargando repos");
-
-        const data: GithubRepo[] = await res.json();
+        const data = await res.json();
         setRepos(data);
       } catch (err) {
-        setReposError("No se pudieron cargar los repositorios.");
+        console.error("Error cargando repositorios");
       } finally {
         setIsLoadingRepos(false);
       }
     };
-
     fetchRepos();
   }, []);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
+    <main 
+      className="min-h-screen relative overflow-hidden bg-[#050505] transition-colors duration-500"
+      style={{ "--color-accent": accentColor } as React.CSSProperties}
+    >
       {/* =============================================
-            HERO
+            HERO SECTION
           ============================================= */}
       <motion.section
-        className="w-full max-w-6xl mx-auto px-4 py-8 md:py-12 lg:py-16"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: "easeOut" }}
+        className="w-full max-w-7xl mx-auto px-6 pt-12 pb-24 md:pt-20"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1 }}
       >
-        {/* Top bar con selector de tema */}
-        <div className="flex items-center justify-between mb-6 text-xs text-slate-400">
-          <span className="hidden sm:inline">
-            Portafolio · Joel Matamala · {new Date().getFullYear()}
-          </span>
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="hidden sm:inline">Tema</span>
-            <button
-              onClick={() => setTheme("blue")}
-              aria-label="Tema azul"
-              className={`h-5 w-5 rounded-full border ${
-                theme === "blue"
-                  ? "border-sky-400 ring-2 ring-sky-500/60"
-                  : "border-slate-600"
-              } bg-sky-500`}
-            />
-            <button
-              onClick={() => setTheme("purple")}
-              aria-label="Tema púrpura"
-              className={`h-5 w-5 rounded-full border ${
-                theme === "purple"
-                  ? "border-purple-400 ring-2 ring-purple-500/60"
-                  : "border-slate-600"
-              } bg-purple-500`}
-            />
-            <button
-              onClick={() => setTheme("emerald")}
-              aria-label="Tema esmeralda"
-              className={`h-5 w-5 rounded-full border ${
-                theme === "emerald"
-                  ? "border-emerald-400 ring-2 ring-emerald-500/60"
-                  : "border-slate-600"
-              } bg-emerald-500`}
-            />
+        <nav className="flex items-center justify-between mb-16">
+          <div className="font-display font-bold text-xl tracking-tighter text-white">
+            JM<span style={{ color: accentColor }} className="transition-colors duration-500">.</span>
           </div>
-        </div>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex gap-8 text-xs uppercase tracking-widest font-medium text-zinc-500">
+              <a href="#sobre-mi" className="hover:text-white transition-colors">Sobre mí</a>
+              <a href="#skills" className="hover:text-white transition-colors">Habilidades</a>
+              <a href="#proyectos" className="hover:text-white transition-colors">Proyectos</a>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setTheme("blue")} className={`w-3 h-3 rounded-full bg-[#00F0FF] ${theme === 'blue' ? 'ring-2 ring-offset-2 ring-offset-black ring-[#00F0FF]' : ''}`} />
+              <button onClick={() => setTheme("purple")} className={`w-3 h-3 rounded-full bg-[#8A2BE2] ${theme === 'purple' ? 'ring-2 ring-offset-2 ring-offset-black ring-[#8A2BE2]' : ''}`} />
+              <button onClick={() => setTheme("emerald")} className={`w-3 h-3 rounded-full bg-[#10b981] ${theme === 'emerald' ? 'ring-2 ring-offset-2 ring-offset-black ring-[#10b981]' : ''}`} />
+            </div>
+          </div>
+        </nav>
 
-        <div className="grid md:grid-cols-[1.2fr,1fr] gap-10 items-center">
-          {/* Texto Hero */}
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
           <motion.div
-            className="space-y-6"
-            initial={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.7, delay: 0.1 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
           >
-            <p className="text-xs md:text-sm uppercase tracking-[0.25em] text-sky-400">
-              Desarrollador Full Stack · Portfolio 3D
-            </p>
-
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight">
-              Hola, soy{" "}
-              <span
-                className="text-transparent bg-clip-text"
-                style={{
-                  backgroundImage: `linear-gradient(120deg, ${accentColor}, #e5e7eb)`,
-                }}
-              >
-                Joel Matamala
-              </span>
+            <span 
+              className="font-mono text-xs font-semibold tracking-widest uppercase mb-4 block transition-colors duration-500"
+              style={{ color: accentColor }}
+            >
+              Disponible para proyectos de alto impacto
+            </span>
+            <h1 className="text-5xl md:text-7xl font-display font-black text-white leading-[1.1] mb-6">
+              Ingeniero en <br />
+              <span style={dynamicGradientStyle} className="transition-all duration-500">Informática</span>
             </h1>
-
-            <p className="text-base md:text-lg text-slate-300">
-              Desarrollador chileno de 23 años con inglés avanzado,
-              especializado en{" "}
-              <span className="font-semibold">full stack, mobile y data</span>.
-              Me encanta crear experiencias limpias, modernas y con 3D.
+            <p className="text-lg md:text-xl text-zinc-400 max-w-xl leading-relaxed mb-8">
+              Hola, soy <span className="text-white font-medium">Joel Matamala</span>. 
+              Especializado en **full stack, mobile y data**. Construyo experiencias digitales 
+              modernas con un enfoque en escalabilidad y clean code.
             </p>
-
-            <div className="flex flex-wrap gap-3">
-              <a
-                href="#skills"
-                className="px-5 py-2 rounded-full bg-sky-500 hover:bg-sky-400 transition text-sm md:text-base"
+            
+            <div className="flex flex-wrap gap-4">
+              <a 
+                href="#contacto" 
+                className="px-8 py-4 rounded-full text-black font-bold transition-all duration-500 hover:scale-105"
+                style={{ backgroundColor: accentColor, boxShadow: `0 0 20px ${accentColor}40` }}
               >
-                Ver habilidades
+                Contactar
               </a>
-              <a
-                href="#proyectos"
-                className="px-5 py-2 rounded-full border border-slate-600 hover:border-sky-400 transition text-sm md:text-base"
-              >
+              <a href="#proyectos" className="px-8 py-4 rounded-full border border-zinc-800 text-white font-medium hover:border-zinc-500 transition-all">
                 Proyectos
               </a>
-              <a
-                href="#contacto"
-                className="px-5 py-2 rounded-full border border-slate-600 hover:border-sky-400 transition text-sm md:text-base"
-              >
-                Contacto
-              </a>
-            </div>
-
-            <div className="text-sm text-slate-400 space-y-1 pt-4">
-              <p>📍 Chile</p>
-              <p>🗣 Inglés avanzado</p>
-              <p>📧 joel.matamala48@gmail.com</p>
             </div>
           </motion.div>
 
-          {/* Modelo 3D con glow animado */}
-          <motion.div
-            className="relative h-72 md:h-96 rounded-3xl overflow-hidden border border-slate-800 bg-slate-900/40 backdrop-blur-md"
-            initial={{ opacity: 0, scale: 0.9, x: 20 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.7, delay: 0.2, ease: "easeOut" }}
-            style={{
-              boxShadow: `0 0 60px ${accentColor}40`,
-            }}
+          {/* ===== VENTANA DE NAVE ESPACIAL (Bug de escala solucionado) ===== */}
+          <motion.div 
+            className="relative w-full h-[450px] md:h-[500px]"
+            // FIX: Usamos "y: 40" en lugar de "scale: 0.9" para evitar el bug de WebGL
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
           >
-            {/* Glow animado */}
-            <div
-              className="pointer-events-none absolute -inset-10 blur-3xl opacity-60 animate-pulse"
-              style={{
-                backgroundImage: `radial-gradient(circle at 20% 0%, ${accentColor}40, transparent 55%), radial-gradient(circle at 80% 100%, #0f172a, transparent 55%)`,
+            {/* Casco Metálico Exterior */}
+            <div 
+              className="absolute inset-0 rounded-[3.5rem] p-4 bg-gradient-to-br from-zinc-700 via-zinc-900 to-black transition-all duration-500"
+              style={{ 
+                boxShadow: `0 20px 50px -10px ${accentColor}30, inset 0 2px 2px rgba(255,255,255,0.2), inset 0 -4px 6px rgba(0,0,0,0.8)`
               }}
-            />
+            >
+              {/* Remaches de la nave */}
+              <div className="absolute top-8 left-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
+              <div className="absolute top-8 right-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
+              <div className="absolute bottom-8 left-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
+              <div className="absolute bottom-8 right-8 w-3 h-3 rounded-full bg-zinc-950 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]" />
 
-            <Canvas camera={{ position: [0, 1, 2], fov: 30 }}>
-              <ambientLight intensity={0.7} />
-              <directionalLight position={[3, 5, 2]} intensity={1.4} />
-              <directionalLight position={[-4, 2, -1]} intensity={0.5} />
+              {/* Cristal / Ventana Interior */}
+              <div 
+                className="relative w-full h-full rounded-[2.5rem] bg-[#020202] overflow-hidden isolate"
+                style={{
+                  boxShadow: `inset 0 0 40px rgba(0,0,0,1), inset 0 0 10px ${accentColor}20`,
+                  border: `1px solid ${accentColor}30`
+                }}
+              >
+                {/* Reflejo del cristal curvo de la ventana */}
+                <div className="absolute -top-10 -left-10 w-40 h-full bg-white/5 rotate-45 blur-md pointer-events-none z-10" />
 
-              <LaptopModel />
+                {/* El Canvas está anclado estrictamente a los bordes */}
+                <div className="absolute inset-0 w-full h-full">
+                  <Canvas camera={{ position: [0, 0, 8], fov: 40 }} dpr={[1, 2]}>
+                    <ambientLight intensity={0.5} />
+                    
+                    <directionalLight position={[5, 10, 5]} intensity={1.5} color={accentColor} />
+                    <pointLight position={[-10, 10, -10]} intensity={2} color={accentColor} />
+                    <pointLight position={[0, -10, 0]} intensity={1} color={accentColor} />
 
-              <OrbitControls
-                enablePan={false}
-                enableZoom={true}
-                minDistance={3}
-                maxDistance={7}
-              />
-            </Canvas>
+                    <EffectComposer disableNormalPass>
+                      <Bloom luminanceThreshold={0.2} mipmapBlur intensity={1.5} radius={0.8} />
+                    </EffectComposer>
+
+                    <group position={[0, 0, 0]} rotation={[0.4, 0, 0]}>
+                       <GlobalNetworkViz color={accentColor} radius={2.2} />
+                       <LaptopModel position={[0, 0, 0]} scale={1.2} />
+                    </group>
+
+                    <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={0.5} makeDefault />
+                  </Canvas>
+                </div>
+              </div>
+            </div>
           </motion.div>
         </div>
       </motion.section>
 
       {/* =============================================
-            SOBRE MÍ
-          ============================================= */}
-      <motion.section
-        id="sobre-mi"
-        className="w-full max-w-6xl mx-auto px-4 py-10"
-        variants={sectionVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.3 }}
-      >
-        <div className="grid md:grid-cols-[1.2fr,1fr] gap-8">
-          <motion.div variants={listVariants} className="space-y-4">
-            <motion.h2
-              variants={itemVariants}
-              className="text-3xl font-semibold flex items-center gap-2"
-            >
-              <span className="text-sky-400">/</span> Sobre mí
-            </motion.h2>
-
-            <motion.p
-              variants={itemVariants}
-              className="text-slate-300 leading-relaxed"
-            >
-              Soy desarrollador con experiencia en{" "}
-              <span className="font-medium">
-                backend, frontend, mobile y data
-              </span>
-              . Me enfoco en clean code, buenas prácticas y aprendizaje
-              constante.
-            </motion.p>
-
-            <motion.p
-              variants={itemVariants}
-              className="text-slate-300 leading-relaxed"
-            >
-              Disfruto construir aplicaciones completas: interfaces, APIs,
-              bases de datos y dashboards, siempre buscando soluciones
-              eficientes y escalables.
-            </motion.p>
-          </motion.div>
-
-          <motion.div
-            variants={itemVariants}
-            className="p-5 rounded-2xl border border-slate-700/60 bg-slate-900/40 backdrop-blur-md text-sm space-y-2 shadow-lg shadow-black/20"
-          >
-            <h3 className="font-semibold text-slate-100 mb-2">
-              Resumen rápido
-            </h3>
-            <p>🎓 Full Stack / Mobile / Datos</p>
-            <p>🧑‍💻 23 años</p>
-            <p>🌎 Chile</p>
-            <p>🗣 Español / Inglés avanzado</p>
-          </motion.div>
-        </div>
-      </motion.section>
-
-      {/* =============================================
-            SKILLS
+            SECCIÓN SKILLS (STACK COMPLETO)
           ============================================= */}
       <motion.section
         id="skills"
-        className="w-full max-w-6xl mx-auto px-4 py-14"
-        variants={sectionVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.3 }}
-      >
-        <motion.h2
-          variants={itemVariants}
-          className="text-3xl font-semibold flex items-center gap-2"
-        >
-          <span className="text-sky-400">/</span> Habilidades técnicas
-        </motion.h2>
-
-        <motion.div
-          variants={listVariants}
-          className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6"
-        >
-          <SkillCard
-            title="Backend"
-            items={[
-              { label: "Python", icon: <SiPython className="h-4 w-4" /> },
-              { label: "Java" }, // sin icono porque SiJava no existe en tu versión
-              { label: "PHP", icon: <SiPhp className="h-4 w-4" /> },
-              { label: "Django", icon: <SiDjango className="h-4 w-4" /> },
-              { label: "REST APIs" },
-            ]}
-          />
-
-          <SkillCard
-            title="Frontend"
-            items={[
-              { label: "HTML5", icon: <SiHtml5 className="h-4 w-4" /> },
-              { label: "CSS3", icon: <SiCss3 className="h-4 w-4" /> },
-              { label: "JavaScript", icon: <SiJavascript className="h-4 w-4" /> },
-              { label: "Angular", icon: <SiAngular className="h-4 w-4" /> },
-              { label: "React", icon: <SiReact className="h-4 w-4" /> },
-              { label: "Tailwind CSS", icon: <SiTailwindcss className="h-4 w-4" /> },
-            ]}
-          />
-
-          <SkillCard
-            title="Mobile"
-            items={[
-              { label: "React Native", icon: <SiReact className="h-4 w-4" /> },
-              { label: "Expo", icon: <SiReact className="h-4 w-4" /> },
-              { label: "Flutter", icon: <SiFlutter className="h-4 w-4" /> },
-              { label: "Dart", icon: <SiDart className="h-4 w-4" /> },
-            ]}
-          />
-
-          <SkillCard
-            title="Bases de datos"
-            items={[
-              { label: "MySQL", icon: <SiMysql className="h-4 w-4" /> },
-              { label: "SQL Server" },
-              { label: "Firebase", icon: <SiFirebase className="h-4 w-4" /> },
-            ]}
-          />
-
-          <SkillCard
-            title="Data & BI"
-            items={[
-              { label: "Power BI", icon: <SiPowerbi className="h-4 w-4" /> },
-              { label: "SQL" },
-              { label: "Modelado de datos" },
-            ]}
-          />
-
-          <SkillCard
-            title="Otros"
-            items={[
-              { label: "Git", icon: <SiGit className="h-4 w-4" /> },
-              { label: "GitHub", icon: <SiGithub className="h-4 w-4" /> },
-              { label: "Trabajo en equipo" },
-              { label: "Clean Code" },
-            ]}
-          />
-        </motion.div>
-      </motion.section>
-
-      {/* =============================================
-            PROYECTOS (GitHub)
-          ============================================= */}
-      <motion.section
-        id="proyectos"
-        className="w-full max-w-6xl mx-auto px-4 py-14"
-        variants={sectionVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.3 }}
-      >
-        <motion.h2
-          variants={itemVariants}
-          className="text-3xl font-semibold flex items-center gap-2"
-        >
-          <span className="text-sky-400">/</span> Proyectos & Experiencia
-        </motion.h2>
-
-        <motion.p
-          variants={itemVariants}
-          className="text-slate-300 mt-2 text-sm md:text-base"
-        >
-          Algunos de mis repos públicos de GitHub, ordenados por actividad
-          reciente.
-        </motion.p>
-
-        <motion.div
-          variants={listVariants}
-          className="grid md:grid-cols-2 gap-6 mt-6"
-        >
-          {isLoadingRepos && (
-            <>
-              <SkeletonProjectCard />
-              <SkeletonProjectCard />
-            </>
-          )}
-
-          {reposError && (
-            <motion.p
-              variants={itemVariants}
-              className="text-red-400 text-sm col-span-full"
-            >
-              {reposError}
-            </motion.p>
-          )}
-
-          {!isLoadingRepos &&
-            !reposError &&
-            repos.map((repo) => (
-              <ProjectCard
-                key={repo.id}
-                title={repo.name}
-                description={
-                  repo.description ?? "Repositorio sin descripción todavía."
-                }
-                tech={
-                  repo.language
-                    ? `${repo.language} · ⭐ ${repo.stargazers_count}`
-                    : `⭐ ${repo.stargazers_count}`
-                }
-                url={repo.html_url}
-              />
-            ))}
-        </motion.div>
-      </motion.section>
-
-      {/* =============================================
-            CONTACTO (centrado)
-          ============================================= */}
-      <motion.section
-        id="contacto"
-        className="w-full max-w-6xl mx-auto px-4 py-14 text-center border-t border-slate-800/60"
+        className="w-full max-w-7xl mx-auto px-6 py-24"
         variants={sectionVariants}
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, amount: 0.2 }}
       >
-        <motion.h2
-          className="text-3xl font-semibold flex items-center justify-center gap-2"
-          variants={itemVariants}
-        >
-          <span className="text-sky-400">/</span> Contacto
-        </motion.h2>
+        <h2 className="text-4xl md:text-5xl font-display font-bold text-white mb-12">
+          Habilidades <span style={dynamicGradientStyle} className="transition-all duration-500">Técnicas</span>
+        </h2>
 
-        <motion.p
-          className="text-slate-300 text-sm md:text-base max-w-2xl mx-auto mt-2"
-          variants={itemVariants}
-        >
-          ¿Quieres trabajar conmigo, colaborar en un proyecto o simplemente
-          conversar? Estoy abierto a nuevas oportunidades y desafíos.
-        </motion.p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          
+          <motion.div variants={itemVariants} className="glass-panel p-8 rounded-[32px] flex flex-col group transition-all duration-500" style={{ borderColor: `var(--color-accent)00` }}>
+            <h3 className="text-white font-display text-xl font-bold mb-6 border-b border-white/5 pb-2">Frontend</h3>
+            <div className="space-y-3">
+              {[
+                { label: "HTML5", icon: <SiHtml5 /> },
+                { label: "CSS3", icon: <SiCss3 /> },
+                { label: "JavaScript", icon: <SiJavascript /> },
+                { label: "Angular", icon: <SiAngular /> },
+                { label: "React / Next.js", icon: <SiReact /> },
+                { label: "Tailwind CSS", icon: <SiTailwindcss /> },
+              ].map((skill) => (
+                <div key={skill.label} className="flex items-center gap-3 text-zinc-400 group-hover:text-zinc-200 transition-colors text-sm font-mono">
+                  <span style={{ color: accentColor }} className="transition-colors duration-500">{skill.icon}</span>
+                  {skill.label}
+                </div>
+              ))}
+            </div>
+          </motion.div>
 
-        <motion.div
-          className="flex flex-wrap gap-4 justify-center mt-6 text-sm md:text-base"
-          variants={listVariants}
-        >
-          <motion.a
-            href="mailto:joel.matamala48@gmail.com"
-            className="px-5 py-2 rounded-full bg-sky-500 hover:bg-sky-400 transition"
-            variants={itemVariants}
-            whileHover={{ scale: 1.03, y: -2 }}
-          >
-            📧 Enviar correo
-          </motion.a>
-          <motion.a
-            href="https://github.com/joelmg19"
-            target="_blank"
-            rel="noreferrer"
-            className="px-5 py-2 rounded-full border border-slate-600 hover:border-sky-400 transition"
-            variants={itemVariants}
-            whileHover={{ scale: 1.03, y: -2 }}
-          >
-            💻 GitHub
-          </motion.a>
-          <motion.a
-            href="https://cl.linkedin.com/in/joel-francisco-matamala-gonzalez-176587224"
-            target="_blank"
-            rel="noreferrer"
-            className="px-5 py-2 rounded-full border border-slate-600 hover:border-sky-400 transition"
-            variants={itemVariants}
-            whileHover={{ scale: 1.03, y: -2 }}
-          >
-            🔗 LinkedIn
-          </motion.a>
-        </motion.div>
+          <motion.div variants={itemVariants} className="glass-panel p-8 rounded-[32px] flex flex-col group">
+            <h3 className="text-white font-display text-xl font-bold mb-6 border-b border-white/5 pb-2">Backend</h3>
+            <div className="space-y-3">
+              {[
+                { label: "Python", icon: <SiPython /> },
+                { label: "Java", icon: <span className="text-[10px]">☕</span> },
+                { label: "PHP", icon: <SiPhp /> },
+                { label: "Django", icon: <SiDjango /> },
+                { label: "REST APIs", icon: <span className="text-[10px]">⚙️</span> },
+              ].map((skill) => (
+                <div key={skill.label} className="flex items-center gap-3 text-zinc-400 group-hover:text-zinc-200 transition-colors text-sm font-mono">
+                  <span style={{ color: accentColor }} className="transition-colors duration-500">{skill.icon}</span>
+                  {skill.label}
+                </div>
+              ))}
+            </div>
+          </motion.div>
 
-        <motion.p
-          className="text-xs text-slate-500 mt-6"
-          variants={itemVariants}
-        >
-          Última actualización: {new Date().getFullYear()}
-        </motion.p>
+          <motion.div variants={itemVariants} className="glass-panel p-8 rounded-[32px] flex flex-col group">
+            <h3 className="text-white font-display text-xl font-bold mb-6 border-b border-white/5 pb-2">Mobile</h3>
+            <div className="space-y-3">
+              {[
+                { label: "Flutter", icon: <SiFlutter /> },
+                { label: "Dart", icon: <SiDart /> },
+                { label: "React Native", icon: <SiReact /> },
+                { label: "Expo", icon: <SiReact /> },
+              ].map((skill) => (
+                <div key={skill.label} className="flex items-center gap-3 text-zinc-400 group-hover:text-zinc-200 transition-colors text-sm font-mono">
+                  <span style={{ color: accentColor }} className="transition-colors duration-500">{skill.icon}</span>
+                  {skill.label}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div variants={itemVariants} className="glass-panel p-8 rounded-[32px] flex flex-col group">
+            <h3 className="text-white font-display text-xl font-bold mb-6 border-b border-white/5 pb-2">Data & Tools</h3>
+            <div className="space-y-3">
+              {[
+                { label: "MySQL", icon: <SiMysql /> },
+                { label: "Firebase", icon: <SiFirebase /> },
+                { label: "Power BI", icon: <SiPowerbi /> },
+                { label: "SQL Server / SQL", icon: <span className="text-[10px]">📊</span> },
+                { label: "Git / GitHub", icon: <SiGithub /> },
+                { label: "Clean Code", icon: <SiGit /> },
+              ].map((skill) => (
+                <div key={skill.label} className="flex items-center gap-3 text-zinc-400 group-hover:text-zinc-200 transition-colors text-sm font-mono">
+                  <span style={{ color: accentColor }} className="transition-colors duration-500">{skill.icon}</span>
+                  {skill.label}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
       </motion.section>
+
+      {/* =============================================
+            PROYECTOS GITHUB
+          ============================================= */}
+      <motion.section
+        id="proyectos"
+        className="w-full max-w-7xl mx-auto px-6 py-24 border-t border-white/5"
+        variants={sectionVariants}
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true }}
+      >
+        <h2 className="text-4xl font-display font-bold text-white mb-12">Proyectos <span className="text-zinc-600">GitHub</span></h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {isLoadingRepos ? (
+             [1, 2, 3].map(i => <div key={i} className="h-48 glass-panel rounded-3xl animate-pulse" />)
+          ) : (
+            repos.map((repo) => (
+              <motion.a
+                key={repo.id}
+                href={repo.html_url}
+                target="_blank"
+                rel="noreferrer"
+                whileHover={{ y: -8 }}
+                className="glass-panel p-8 rounded-[32px] flex flex-col justify-between group relative transition-colors duration-300"
+                style={{ '--hover-color': accentColor } as React.CSSProperties}
+              >
+                <div>
+                  <h3 className="text-white font-display text-xl font-bold mb-2 group-hover:opacity-80 transition-opacity" style={{ color: "var(--hover-color)" }}>{repo.name}</h3>
+                  <p className="text-zinc-500 text-sm line-clamp-2">{repo.description || "Proyecto de ingeniería informática."}</p>
+                </div>
+                <div className="mt-6 font-mono text-[10px] text-zinc-400 flex items-center justify-between">
+                  <span style={{ color: accentColor }} className="uppercase tracking-tighter transition-colors duration-500">{repo.language || "Stack"}</span>
+                  <span>⭐ {repo.stargazers_count}</span>
+                </div>
+              </motion.a>
+            ))
+          )}
+        </div>
+      </motion.section>
+
+      {/* =============================================
+            FOOTER / CONTACTO
+          ============================================= */}
+      <footer id="contacto" className="w-full max-w-7xl mx-auto px-6 py-24 text-center">
+        <h2 className="text-5xl md:text-7xl font-display font-black text-white mb-8 italic uppercase tracking-tighter">
+          ¿Creamos algo  <span style={dynamicGradientStyle} className="transition-all duration-500">Épico </span>?
+        </h2>
+        <div className="flex flex-col md:flex-row justify-center gap-6 mt-12 font-mono text-sm">
+          <a href="mailto:joel.matamala48@gmail.com" className="px-10 py-5 glass-panel rounded-full hover:bg-white hover:text-black transition-all">
+            📧 joel.matamala48@gmail.com
+          </a>
+          <div className="flex gap-4 justify-center">
+            <a href="https://github.com/joelmg19" target="_blank" className="p-5 glass-panel rounded-full hover:scale-110 transition-all" style={{ backgroundColor: `${accentColor}15` }}>
+              <SiGithub style={{ color: accentColor }} className="w-5 h-5 transition-colors duration-500" />
+            </a>
+          </div>
+        </div>
+        <p className="mt-20 text-zinc-700 text-xs font-mono">
+          Joel Matamala · Ingeniero en Informática · {new Date().getFullYear()}
+        </p>
+      </footer>
     </main>
-  );
-}
-
-/* ===========================
-   Componentes reutilizables
-   =========================== */
-
-function SkillCard({ title, items }: SkillCardProps) {
-  return (
-    <motion.article
-      variants={itemVariants}
-      whileHover={{ y: -4, scale: 1.02 }}
-      className="p-5 rounded-2xl bg-slate-900/30 border border-slate-700/60 backdrop-blur-md shadow-lg shadow-black/20"
-    >
-      <h3 className="font-semibold text-slate-100 flex items-center gap-2">
-        {title}
-      </h3>
-      <ul className="text-slate-300 mt-2 space-y-1 text-sm">
-        {items.map((item) => (
-          <li key={item.label} className="flex items-center gap-2">
-            {item.icon && (
-              <span className="text-sky-400 flex items-center justify-center">
-                {item.icon}
-              </span>
-            )}
-            <span>{item.label}</span>
-          </li>
-        ))}
-      </ul>
-    </motion.article>
-  );
-}
-
-function ProjectCard({ title, description, tech, url }: ProjectCardProps) {
-  return (
-    <motion.a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      variants={itemVariants}
-      whileHover={{ y: -4, scale: 1.02 }}
-      className="p-5 rounded-2xl block bg-slate-900/30 border border-slate-700/60 backdrop-blur-md shadow-lg shadow-black/20 hover:border-sky-500/60"
-    >
-      <h3 className="font-semibold text-slate-100">{title}</h3>
-      <p className="text-slate-300 text-sm mt-1">{description}</p>
-      <p className="text-sky-400 text-xs font-mono mt-2">{tech}</p>
-    </motion.a>
-  );
-}
-
-function SkeletonProjectCard() {
-  return (
-    <div className="p-5 rounded-2xl bg-slate-900/30 border border-slate-700/60 backdrop-blur-md shadow-lg shadow-black/20 animate-pulse space-y-3">
-      <div className="h-4 w-1/3 bg-slate-700 rounded" />
-      <div className="h-3 w-full bg-slate-800 rounded" />
-      <div className="h-3 w-2/3 bg-slate-800 rounded" />
-    </div>
   );
 }
