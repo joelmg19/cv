@@ -51,7 +51,6 @@ function GlobalNetworkViz({ color, radius = 2.2 }: { color: string, radius?: num
         const p1 = new THREE.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
         const p2 = new THREE.Vector3(pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2]);
         
-        // Aumentado a 1.3 para que las líneas no se rompan al hacer más grande la red
         if (p1.distanceTo(p2) < 1.3) {
           linePositions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
         }
@@ -71,14 +70,12 @@ function GlobalNetworkViz({ color, radius = 2.2 }: { color: string, radius?: num
     <group ref={group}>
       <points>
         <bufferGeometry>
-          {/* FIX VERCEL: Se añadió args={[positions, 3]} */}
           <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} args={[positions, 3]} />
         </bufferGeometry>
         <pointsMaterial size={0.05} color={color} transparent opacity={1} depthWrite={false} />
       </points>
       <lineSegments>
         <bufferGeometry>
-          {/* FIX VERCEL: Se añadió args={[lines, 3]} */}
           <bufferAttribute attach="attributes-position" count={lines.length / 3} array={lines} itemSize={3} args={[lines, 3]} />
         </bufferGeometry>
         <lineBasicMaterial color={color} transparent opacity={0.3} depthWrite={false} />
@@ -240,12 +237,12 @@ export default function Home() {
                     <pointLight position={[-10, 10, -10]} intensity={2} color={accentColor} />
                     <pointLight position={[0, -10, 0]} intensity={1} color={accentColor} />
 
-                    <EffectComposer disableNormalPass>
+                    {/* FIX VERCEL: Se removió "disableNormalPass" que ya no existe */}
+                    <EffectComposer>
                       <Bloom luminanceThreshold={0.2} mipmapBlur intensity={1.5} radius={0.8} />
                     </EffectComposer>
 
                     <group position={[0, 0, 0]} rotation={[0.4, 0, 0]}>
-                       {/* AUMENTO DE TAMAÑO: Radio a 2.8 y Escala de Laptop a 1.6 */}
                        <GlobalNetworkViz color={accentColor} radius={2.8} />
                        <LaptopModel position={[0, 0, 0]} scale={1.6} />
                     </group>
