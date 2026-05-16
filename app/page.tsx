@@ -242,10 +242,13 @@ export default function Home() {
                       <Bloom luminanceThreshold={0.2} mipmapBlur intensity={1.5} radius={0.8} />
                     </EffectComposer>
 
-                    <group position={[0, 0, 0]} rotation={[0.4, 0, 0]}>
-                       <GlobalNetworkViz color={accentColor} radius={2.8} />
-                       <LaptopModel position={[0, 0, 0]} scale={1.6} />
-                    </group>
+                <group position={[0, 0, 0]} rotation={[0.4, 0, 0]}>
+                        <GlobalNetworkViz color={accentColor} radius={2.8} />
+                    {/* Envolvemos el modelo en un grupo nativo para aplicar la escala sin errores de TypeScript pa que no nos de error en vercel*/}
+                          <group scale={1.6}>
+                            <LaptopModel />
+                          </group>
+                </group>
 
                     <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={0.5} makeDefault />
                   </Canvas>
